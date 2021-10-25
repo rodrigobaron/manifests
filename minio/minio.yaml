@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minio
+      component: minio
+  template:
+    metadata:
+      labels:
+        app: minio
+        component: minio 
+    spec:
+      containers:
+        - name: minio
+          image: minio/minio
+          command: ["minio"]
+          args: ["server", "/data", "--console-address", "0.0.0.0:8080"]
+          ports:
+            - containerPort: 9000
+              name: endpoint
+            - containerPort: 8080
+              name: console
+          livenessProbe:
+            tcpSocket:
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 60
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio 
+spec:
+  ports:
+    - name: console
+      port: 8080
+      nodePort: 32080
+    - name: endpoint
+      port: 9000
+  selector:
+    app: minio
+    component: minio
+  type: NodePort
