@@ -680,7 +680,7 @@ subjects:
 #################################################################################################################
 # OLM: BEGIN CLUSTER POD SECURITY POLICY
 ---
-apiVersion: policy/v1beta1
+apiVersion: policy/v1
 kind: PodSecurityPolicy
 metadata:
   # Note: Kubernetes matches PSPs to deployments alphabetically. In some environments, this PSP may

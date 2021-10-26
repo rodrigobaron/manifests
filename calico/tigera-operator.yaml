@@ -5103,7 +5103,7 @@ metadata:
 # Source: tigera-operator/templates/tigera-operator/02-podsecuritypolicy-tigera-operator.yaml
 # This should not be rendered for an OpenShift install.
 # OpenShift uses SecurityContextConstraints instead.
-apiVersion: policy/v1beta1
+apiVersion: policy/v1
 kind: PodSecurityPolicy
 metadata:
   name: tigera-operator
