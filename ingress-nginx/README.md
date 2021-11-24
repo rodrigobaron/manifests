@@ -1,4 +1,4 @@
-## Calico
+## ingress-nginx
 
 Here have a custom ingress-nginx setup using as base:
 

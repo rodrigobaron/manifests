@@ -1,4 +1,4 @@
-## Calico
+## Kubernetes Dashboard
 
 Here have a custom Kubernetes Dashboard setup using as base:
 
