@@ -1,10 +1,4 @@
-## Storage implementations
-
-### Manual StorageClass
-
-See the implementation [here](manual-storage.yaml)
-
-### Rancher local-path-provisioner
+## Rancher local-path-provisioner
 
 It's a modified version from:
 ```bash
