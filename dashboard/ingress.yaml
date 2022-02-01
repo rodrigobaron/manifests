@@ -13,7 +13,7 @@ spec:
       - dash.k8s.rodrigobaron.com
       secretName: tls-secret
   rules:
-  - host: k8s.rodrigobaron.com
+  - host: dash.k8s.rodrigobaron.com
     http:
       paths:
       - path: /
