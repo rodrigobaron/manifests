@@ -7,7 +7,7 @@ metadata:
   namespace: flyte
   labels:
     app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
+    helm.sh/chart: contour-5.0.0
     app.kubernetes.io/instance: flyte
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: contour
@@ -20,7 +20,7 @@ metadata:
   namespace: flyte
   labels:
     app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
+    helm.sh/chart: contour-5.0.0
     app.kubernetes.io/instance: flyte
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: envoy
@@ -106,6 +106,19 @@ metadata:
     app.kubernetes.io/version: "2.2.0"
     app.kubernetes.io/managed-by: Helm
   name: flyte-kubernetes-dashboard
+---
+# Source: flyte/charts/sparkoperator/templates/spark-serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: flyte-spark
+  namespace: flyte
+  labels:
+    helm.sh/chart: sparkoperator-1.1.17
+    app.kubernetes.io/name: sparkoperator
+    app.kubernetes.io/instance: flyte
+    app.kubernetes.io/version: "v1beta2-1.3.3-3.1.1"
+    app.kubernetes.io/managed-by: Helm
 ---
 # Source: flyte/charts/flyte/templates/admin/secret-auth.yaml
 apiVersion: v1
@@ -199,7 +212,7 @@ metadata:
   namespace: flyte
   labels:
     app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
+    helm.sh/chart: contour-5.0.0
     app.kubernetes.io/instance: flyte
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: contour
@@ -210,8 +223,7 @@ data:
     envoy-service-name: 'flyte-contour-envoy'
     leaderelection:
       configmap-namespace: 'flyte'
-    tls:
-      fallback-certificate: {}
+    tls: {}
 ---
 # Source: flyte/charts/flyte/templates/admin/configmap.yaml
 apiVersion: v1
@@ -370,6 +382,54 @@ data:
       hard:
         limits.cpu: {{ projectQuotaCpu }}
         limits.memory: {{ projectQuotaMemory }}
+    
+  ad_spark-role.yaml: | 
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata:
+      name: spark-role
+      namespace: {{ namespace }}
+    rules:
+    - apiGroups:
+      - ""
+      resources:
+      - pods
+      verbs:
+      - '*'
+    - apiGroups:
+      - ""
+      resources:
+      - services
+      verbs:
+      - '*'
+    - apiGroups:
+      - ""
+      resources:
+      - configmaps
+      verbs:
+      - '*'
+    
+  ae_spark-service-account.yaml: | 
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: spark
+      namespace: {{ namespace }}
+    
+  af_spark-role-binding.yaml: | 
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata:
+      name: spark-role-binding
+      namespace: {{ namespace }}
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: Role
+      name: spark-role
+    subjects:
+    - kind: ServiceAccount
+      name: spark
+      namespace: {{ namespace }}
 ---
 # Source: flyte/charts/flyte/templates/clusterresourcesync/configmap.yaml
 apiVersion: v1
@@ -602,16 +662,18 @@ data:
           container: container
           container_array: k8s-array
           sidecar: sidecar
+          spark: spark
         enabled-plugins:
         - container
         - sidecar
         - k8s-array
+        - spark
   k8s.yaml: | 
     plugins:
       k8s:
         default-cpus: 100m
         default-env-vars:
-        - FLYTE_AWS_ENDPOINT: http://minio.flyte:9000
+        - FLYTE_AWS_ENDPOINT: http://192.168.0.222:30084
         - FLYTE_AWS_ACCESS_KEY_ID: minio
         - FLYTE_AWS_SECRET_ACCESS_KEY: miniostorage
         default-memory: 200Mi
@@ -679,1841 +741,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.6.0
-  creationTimestamp: null
-  name: contourconfigurations.projectcontour.io
-spec:
-  preserveUnknownFields: false
-  group: projectcontour.io
-  names:
-    kind: ContourConfiguration
-    listKind: ContourConfigurationList
-    plural: contourconfigurations
-    shortNames:
-    - contourconfig
-    singular: contourconfiguration
-  scope: Namespaced
-  versions:
-  - name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: ContourConfiguration is the schema for a Contour instance.
-        properties:
-          apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-            type: string
-          kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-            type: string
-          metadata:
-            type: object
-          spec:
-            description: ContourConfigurationSpec represents a configuration of a
-              Contour controller. It contains most of all the options that can be
-              customized, the other remaining options being command line flags.
-            properties:
-              debug:
-                default:
-                  kubernetesLogLevel: 0
-                  logLevel: info
-                description: Debug contains parameters to enable debug logging and
-                  debug interfaces inside Contour.
-                properties:
-                  address:
-                    description: Defines the Contour debug address interface.
-                    type: string
-                  kubernetesLogLevel:
-                    default: 0
-                    description: "KubernetesDebugLogLevel defines the log level which
-                      Contour will use when outputting Kubernetes specific log information.
-                      \n Details: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md"
-                    maximum: 9
-                    minimum: 0
-                    type: integer
-                  logLevel:
-                    description: DebugLogLevel defines the log level which Contour
-                      will use when outputting log information.
-                    enum:
-                    - info
-                    - debug
-                    type: string
-                  port:
-                    description: Defines the Contour debug address port.
-                    type: integer
-                required:
-                - logLevel
-                type: object
-              enableExternalNameService:
-                default: false
-                description: EnableExternalNameService allows processing of ExternalNameServices
-                  Defaults to disabled for security reasons.
-                type: boolean
-              envoy:
-                default:
-                  cluster:
-                    dnsLookupFamily: auto
-                  defaultHTTPVersions:
-                  - HTTP/1.1
-                  - HTTP/2
-                  http:
-                    accessLog: /dev/stdout
-                    address: 0.0.0.0
-                    port: 8080
-                  https:
-                    accessLog: /dev/stdout
-                    address: 0.0.0.0
-                    port: 8443
-                  listener:
-                    connectionBalancer: ""
-                    disableAllowChunkedLength: false
-                    tls:
-                      cipherSuites:
-                      - '[ECDHE-ECDSA-AES128-GCM-SHA256|ECDHE-ECDSA-CHACHA20-POLY1305]'
-                      - '[ECDHE-RSA-AES128-GCM-SHA256|ECDHE-RSA-CHACHA20-POLY1305]'
-                      - ECDHE-ECDSA-AES256-GCM-SHA384
-                      - ECDHE-RSA-AES256-GCM-SHA384
-                      minimumProtocolVersion: "1.2"
-                    useProxyProtocol: false
-                  logging:
-                    accessLogFormat: envoy
-                  metrics:
-                    address: 0.0.0.0
-                    port: 8002
-                  network:
-                    adminPort: 9001
-                  service:
-                    name: envoy
-                    namespace: projectcontour
-                description: Envoy contains parameters for Envoy as well as how to
-                  optionally configure a managed Envoy fleet.
-                properties:
-                  clientCertificate:
-                    description: ClientCertificate defines the namespace/name of the
-                      Kubernetes secret containing the client certificate and private
-                      key to be used when establishing TLS connection to upstream
-                      cluster.
-                    properties:
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                    required:
-                    - name
-                    - namespace
-                    type: object
-                  cluster:
-                    description: Cluster holds various configurable Envoy cluster
-                      values that can be set in the config file.
-                    properties:
-                      dnsLookupFamily:
-                        default: auto
-                        description: "DNSLookupFamily defines how external names are
-                          looked up When configured as V4, the DNS resolver will only
-                          perform a lookup for addresses in the IPv4 family. If V6
-                          is configured, the DNS resolver will only perform a lookup
-                          for addresses in the IPv6 family. If AUTO is configured,
-                          the DNS resolver will first perform a lookup for addresses
-                          in the IPv6 family and fallback to a lookup for addresses
-                          in the IPv4 family. Note: This only applies to externalName
-                          clusters. \n See https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v3/cluster.proto.html#envoy-v3-api-enum-config-cluster-v3-cluster-dnslookupfamily
-                          for more information."
-                        enum:
-                        - auto
-                        - v4
-                        - v6
-                        type: string
-                    required:
-                    - dnsLookupFamily
-                    type: object
-                  defaultHTTPVersions:
-                    description: DefaultHTTPVersions defines the default set of HTTPS
-                      versions the proxy should accept. HTTP versions are strings
-                      of the form "HTTP/xx". Supported versions are "HTTP/1.1" and
-                      "HTTP/2".
-                    items:
-                      description: HTTPVersionType is the name of a supported HTTP
-                        version.
-                      enum:
-                      - HTTP/1.1
-                      - HTTP/2
-                      type: string
-                    type: array
-                  http:
-                    default:
-                      accessLog: /dev/stdout
-                      address: 0.0.0.0
-                      port: 8080
-                    description: Defines the HTTP Listener for Envoy.
-                    properties:
-                      accessLog:
-                        description: AccessLog defines where Envoy logs are outputted
-                          for this listener.
-                        type: string
-                      address:
-                        description: Defines an Envoy Listener Address.
-                        minLength: 1
-                        type: string
-                      port:
-                        description: Defines an Envoy listener Port.
-                        type: integer
-                    required:
-                    - accessLog
-                    - address
-                    - port
-                    type: object
-                  https:
-                    default:
-                      accessLog: /dev/stdout
-                      address: 0.0.0.0
-                      port: 8443
-                    description: Defines the HTTP Listener for Envoy.
-                    properties:
-                      accessLog:
-                        description: AccessLog defines where Envoy logs are outputted
-                          for this listener.
-                        type: string
-                      address:
-                        description: Defines an Envoy Listener Address.
-                        minLength: 1
-                        type: string
-                      port:
-                        description: Defines an Envoy listener Port.
-                        type: integer
-                    required:
-                    - accessLog
-                    - address
-                    - port
-                    type: object
-                  listener:
-                    description: Listener hold various configurable Envoy listener
-                      values.
-                    properties:
-                      connectionBalancer:
-                        description: ConnectionBalancer. If the value is exact, the
-                          listener will use the exact connection balancer See https://www.envoyproxy.io/docs/envoy/latest/api-v2/api/v2/listener.proto#envoy-api-msg-listener-connectionbalanceconfig
-                          for more information.
-                        enum:
-                        - ""
-                        - exact
-                        type: string
-                      disableAllowChunkedLength:
-                        description: 'DisableAllowChunkedLength disables the RFC-compliant
-                          Envoy behavior to strip the "Content-Length" header if "Transfer-Encoding:
-                          chunked" is also set. This is an emergency off-switch to
-                          revert back to Envoy''s default behavior in case of failures.
-                          Please file an issue if failures are encountered. See: https://github.com/projectcontour/contour/issues/3221'
-                        type: boolean
-                      tls:
-                        description: TLS holds various configurable Envoy TLS listener
-                          values.
-                        properties:
-                          cipherSuites:
-                            description: "CipherSuites defines the TLS ciphers to
-                              be supported by Envoy TLS listeners when negotiating
-                              TLS 1.2. Ciphers are validated against the set that
-                              Envoy supports by default. This parameter should only
-                              be used by advanced users. Note that these will be ignored
-                              when TLS 1.3 is in use. \n See: https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/transport_sockets/tls/v3/common.proto#extensions-transport-sockets-tls-v3-tlsparameters
-                              Note: This list is a superset of what is valid for stock
-                              Envoy builds and those using BoringSSL FIPS."
-                            items:
-                              enum:
-                              - '[ECDHE-ECDSA-AES128-GCM-SHA256|ECDHE-ECDSA-CHACHA20-POLY1305]'
-                              - '[ECDHE-RSA-AES128-GCM-SHA256|ECDHE-RSA-CHACHA20-POLY1305]'
-                              - ECDHE-ECDSA-AES128-GCM-SHA256
-                              - ECDHE-RSA-AES128-GCM-SHA256
-                              - ECDHE-ECDSA-AES128-SHA
-                              - ECDHE-RSA-AES128-SHA
-                              - AES128-GCM-SHA256
-                              - AES128-SHA
-                              - ECDHE-ECDSA-AES256-GCM-SHA384
-                              - ECDHE-RSA-AES256-GCM-SHA384
-                              - ECDHE-ECDSA-AES256-SHA
-                              - ECDHE-RSA-AES256-SHA
-                              - AES256-GCM-SHA384
-                              - AES256-SHA
-                              type: string
-                            type: array
-                          minimumProtocolVersion:
-                            description: MinimumProtocolVersion is the minimum TLS
-                              version this vhost should negotiate. Valid options are
-                              `1.2` (default) and `1.3`.
-                            enum:
-                            - "1.2"
-                            - "1.3"
-                            type: string
-                        required:
-                        - cipherSuites
-                        - minimumProtocolVersion
-                        type: object
-                      useProxyProtocol:
-                        description: Use PROXY protocol for all listeners.
-                        type: boolean
-                    required:
-                    - connectionBalancer
-                    - disableAllowChunkedLength
-                    - tls
-                    - useProxyProtocol
-                    type: object
-                  logging:
-                    description: Logging defines how Envoy's logs can be configured.
-                    properties:
-                      accessLogFormat:
-                        description: AccessLogFormat sets the global access log format.
-                          Valid options are 'envoy' or 'json'
-                        enum:
-                        - envoy
-                        - json
-                        type: string
-                      accessLogFormatString:
-                        description: AccessLogFormatString sets the access log format
-                          when format is set to `envoy`. When empty, Envoy's default
-                          format is used.
-                        type: string
-                      jsonFields:
-                        description: AccessLogFields sets the fields that JSON logging
-                          will output when AccessLogFormat is json.
-                        items:
-                          type: string
-                        type: array
-                    required:
-                    - accessLogFormat
-                    type: object
-                  metrics:
-                    default:
-                      address: 0.0.0.0
-                      port: 8002
-                    description: Metrics defines the endpoints Envoy use to serve
-                      to metrics.
-                    properties:
-                      address:
-                        description: Defines the metrics address interface.
-                        maxLength: 253
-                        minLength: 1
-                        type: string
-                      port:
-                        description: Defines the metrics port.
-                        type: integer
-                    required:
-                    - address
-                    - port
-                    type: object
-                  network:
-                    description: Network holds various configurable Envoy network
-                      values.
-                    properties:
-                      adminPort:
-                        default: 9001
-                        description: Configure the port used to access the Envoy Admin
-                          interface. If configured to port "0" then the admin interface
-                          is disabled.
-                        type: integer
-                      numTrustedHops:
-                        description: "XffNumTrustedHops defines the number of additional
-                          ingress proxy hops from the right side of the x-forwarded-for
-                          HTTP header to trust when determining the origin client’s
-                          IP address. \n See https://www.envoyproxy.io/docs/envoy/v1.17.0/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto?highlight=xff_num_trusted_hops
-                          for more information."
-                        format: int32
-                        type: integer
-                    required:
-                    - adminPort
-                    type: object
-                  service:
-                    default:
-                      name: envoy
-                      namespace: projectcontour
-                    description: Service holds Envoy service parameters for setting
-                      Ingress status.
-                    properties:
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                    required:
-                    - name
-                    - namespace
-                    type: object
-                  timeouts:
-                    description: Timeouts holds various configurable timeouts that
-                      can be set in the config file.
-                    properties:
-                      connectionIdleTimeout:
-                        description: "ConnectionIdleTimeout defines how long the proxy
-                          should wait while there are no active requests (for HTTP/1.1)
-                          or streams (for HTTP/2) before terminating an HTTP connection.
-                          Set to \"infinity\" to disable the timeout entirely. \n
-                          See https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/core/v3/protocol.proto#envoy-v3-api-field-config-core-v3-httpprotocoloptions-idle-timeout
-                          for more information."
-                        type: string
-                      connectionShutdownGracePeriod:
-                        description: "ConnectionShutdownGracePeriod defines how long
-                          the proxy will wait between sending an initial GOAWAY frame
-                          and a second, final GOAWAY frame when terminating an HTTP/2
-                          connection. During this grace period, the proxy will continue
-                          to respond to new streams. After the final GOAWAY frame
-                          has been sent, the proxy will refuse new streams. \n See
-                          https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-field-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-drain-timeout
-                          for more information."
-                        type: string
-                      delayedCloseTimeout:
-                        description: "DelayedCloseTimeout defines how long envoy will
-                          wait, once connection close processing has been initiated,
-                          for the downstream peer to close the connection before Envoy
-                          closes the socket associated with the connection. \n Setting
-                          this timeout to 'infinity' will disable it, equivalent to
-                          setting it to '0' in Envoy. Leaving it unset will result
-                          in the Envoy default value being used. \n See https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-field-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-delayed-close-timeout
-                          for more information."
-                        type: string
-                      maxConnectionDuration:
-                        description: "MaxConnectionDuration defines the maximum period
-                          of time after an HTTP connection has been established from
-                          the client to the proxy before it is closed by the proxy,
-                          regardless of whether there has been activity or not. Omit
-                          or set to \"infinity\" for no max duration. \n See https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/core/v3/protocol.proto#envoy-v3-api-field-config-core-v3-httpprotocoloptions-max-connection-duration
-                          for more information."
-                        type: string
-                      requestTimeout:
-                        description: "RequestTimeout sets the client request timeout
-                          globally for Contour. Note that this is a timeout for the
-                          entire request, not an idle timeout. Omit or set to \"infinity\"
-                          to disable the timeout entirely. \n See https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-field-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-request-timeout
-                          for more information."
-                        type: string
-                      streamIdleTimeout:
-                        description: "StreamIdleTimeout defines how long the proxy
-                          should wait while there is no request activity (for HTTP/1.1)
-                          or stream activity (for HTTP/2) before terminating the HTTP
-                          request or stream. Set to \"infinity\" to disable the timeout
-                          entirely. \n See https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-field-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-stream-idle-timeout
-                          for more information."
-                        type: string
-                    type: object
-                required:
-                - cluster
-                - defaultHTTPVersions
-                - http
-                - https
-                - listener
-                - logging
-                - metrics
-                - network
-                - service
-                type: object
-              gateway:
-                description: Gateway contains parameters for the gateway-api Gateway
-                  that Contour is configured to serve traffic.
-                properties:
-                  controllerName:
-                    default: projectcontour.io/projectcontour/contour
-                    description: ControllerName is used to determine whether Contour
-                      should reconcile a GatewayClass. The string takes the form of
-                      "projectcontour.io/<namespace>/contour". If unset, the gatewayclass
-                      controller will not be started.
-                    type: string
-                required:
-                - controllerName
-                type: object
-              health:
-                default:
-                  address: 0.0.0.0
-                  port: 8000
-                description: Health contains parameters to configure endpoints which
-                  Contour exposes to respond to Kubernetes health checks.
-                properties:
-                  address:
-                    description: Defines the Contour health address interface.
-                    minLength: 1
-                    type: string
-                  port:
-                    description: Defines the Contour health port.
-                    type: integer
-                required:
-                - address
-                - port
-                type: object
-              httpproxy:
-                default:
-                  disablePermitInsecure: false
-                description: HTTPProxy defines parameters on HTTPProxy.
-                properties:
-                  disablePermitInsecure:
-                    description: DisablePermitInsecure disables the use of the permitInsecure
-                      field in HTTPProxy.
-                    type: boolean
-                  fallbackCertificate:
-                    description: FallbackCertificate defines the namespace/name of
-                      the Kubernetes secret to use as fallback when a non-SNI request
-                      is received.
-                    properties:
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                    required:
-                    - name
-                    - namespace
-                    type: object
-                  rootNamespaces:
-                    description: Restrict Contour to searching these namespaces for
-                      root ingress routes.
-                    items:
-                      type: string
-                    type: array
-                required:
-                - disablePermitInsecure
-                type: object
-              ingress:
-                description: Ingress contains parameters for ingress options.
-                properties:
-                  className:
-                    description: Ingress Class Name Contour should use.
-                    type: string
-                  statusAddress:
-                    description: Address to set in Ingress object status.
-                    type: string
-                type: object
-              leaderElection:
-                default:
-                  configmap:
-                    name: leader-elect
-                    namespace: projectcontour
-                  disableLeaderElection: false
-                  leaseDuration: 15s
-                  renewDeadline: 10s
-                  retryPeriod: 2s
-                description: LeaderElection contains leader election parameters.
-                properties:
-                  configmap:
-                    description: NamespacedName defines the namespace/name of the
-                      Kubernetes resource referred from the config file. Used for
-                      Contour config YAML file parsing, otherwise we could use K8s
-                      types.NamespacedName.
-                    properties:
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                    required:
-                    - name
-                    - namespace
-                    type: object
-                  disableLeaderElection:
-                    type: boolean
-                  leaseDuration:
-                    type: string
-                  renewDeadline:
-                    type: string
-                  retryPeriod:
-                    type: string
-                required:
-                - disableLeaderElection
-                type: object
-              metrics:
-                default:
-                  address: 0.0.0.0
-                  port: 8000
-                description: Metrics defines the endpoints Contour uses to serve to
-                  metrics.
-                properties:
-                  address:
-                    description: Defines the metrics address interface.
-                    maxLength: 253
-                    minLength: 1
-                    type: string
-                  port:
-                    description: Defines the metrics port.
-                    type: integer
-                required:
-                - address
-                - port
-                type: object
-              policy:
-                description: Policy specifies default policy applied if not overridden
-                  by the user
-                properties:
-                  applyToIngress:
-                    description: ApplyToIngress determines if the Policies will apply
-                      to ingress objects
-                    type: boolean
-                  requestHeaders:
-                    description: RequestHeadersPolicy defines the request headers
-                      set/removed on all routes
-                    properties:
-                      remove:
-                        items:
-                          type: string
-                        type: array
-                      set:
-                        additionalProperties:
-                          type: string
-                        type: object
-                    type: object
-                  responseHeaders:
-                    description: ResponseHeadersPolicy defines the response headers
-                      set/removed on all routes
-                    properties:
-                      remove:
-                        items:
-                          type: string
-                        type: array
-                      set:
-                        additionalProperties:
-                          type: string
-                        type: object
-                    type: object
-                type: object
-              rateLimitService:
-                description: RateLimitService optionally holds properties of the Rate
-                  Limit Service to be used for global rate limiting.
-                properties:
-                  domain:
-                    description: Domain is passed to the Rate Limit Service.
-                    type: string
-                  enableXRateLimitHeaders:
-                    description: "EnableXRateLimitHeaders defines whether to include
-                      the X-RateLimit headers X-RateLimit-Limit, X-RateLimit-Remaining,
-                      and X-RateLimit-Reset (as defined by the IETF Internet-Draft
-                      linked below), on responses to clients when the Rate Limit Service
-                      is consulted for a request. \n ref. https://tools.ietf.org/id/draft-polli-ratelimit-headers-03.html"
-                    type: boolean
-                  extensionService:
-                    description: ExtensionService identifies the extension service
-                      defining the RLS.
-                    properties:
-                      name:
-                        type: string
-                      namespace:
-                        type: string
-                    required:
-                    - name
-                    - namespace
-                    type: object
-                  failOpen:
-                    description: FailOpen defines whether to allow requests to proceed
-                      when the Rate Limit Service fails to respond with a valid rate
-                      limit decision within the timeout defined on the extension service.
-                    type: boolean
-                required:
-                - domain
-                - enableXRateLimitHeaders
-                - failOpen
-                type: object
-              xdsServer:
-                default:
-                  address: 0.0.0.0
-                  port: 8001
-                  tls:
-                    caFile: /certs/ca.crt
-                    certFile: /certs/tls.crt
-                    insecure: false
-                    keyFile: /certs/tls.key
-                  type: contour
-                description: XDSServer contains parameters for the xDS server.
-                properties:
-                  address:
-                    description: Defines the xDS gRPC API address which Contour will
-                      serve.
-                    minLength: 1
-                    type: string
-                  port:
-                    description: Defines the xDS gRPC API port which Contour will
-                      serve.
-                    type: integer
-                  tls:
-                    description: TLS holds TLS file config details.
-                    properties:
-                      caFile:
-                        description: CA filename.
-                        type: string
-                      certFile:
-                        description: Client certificate filename.
-                        type: string
-                      insecure:
-                        description: Allow serving the xDS gRPC API without TLS.
-                        type: boolean
-                      keyFile:
-                        description: Client key filename.
-                        type: string
-                    required:
-                    - insecure
-                    type: object
-                  type:
-                    description: Defines the XDSServer to use for `contour serve`.
-                    enum:
-                    - contour
-                    - envoy
-                    type: string
-                required:
-                - address
-                - port
-                - type
-                type: object
-            type: object
-          status:
-            description: ContourConfigurationStatus defines the observed state of
-              a ContourConfiguration resource.
-            properties:
-              conditions:
-                description: "Conditions contains the current status of the Contour
-                  resource. \n Contour will update a single condition, `Valid`, that
-                  is in normal-true polarity. \n Contour will not modify any other
-                  Conditions set in this block, in case some other controller wants
-                  to add a Condition."
-                items:
-                  description: "DetailedCondition is an extension of the normal Kubernetes
-                    conditions, with two extra fields to hold sub-conditions, which
-                    provide more detailed reasons for the state (True or False) of
-                    the condition. \n `errors` holds information about sub-conditions
-                    which are fatal to that condition and render its state False.
-                    \n `warnings` holds information about sub-conditions which are
-                    not fatal to that condition and do not force the state to be False.
-                    \n Remember that Conditions have a type, a status, and a reason.
-                    \n The type is the type of the condition, the most important one
-                    in this CRD set is `Valid`. `Valid` is a positive-polarity condition:
-                    when it is `status: true` there are no problems. \n In more detail,
-                    `status: true` means that the object is has been ingested into
-                    Contour with no errors. `warnings` may still be present, and will
-                    be indicated in the Reason field. There must be zero entries in
-                    the `errors` slice in this case. \n `Valid`, `status: false` means
-                    that the object has had one or more fatal errors during processing
-                    into Contour.  The details of the errors will be present under
-                    the `errors` field. There must be at least one error in the `errors`
-                    slice if `status` is `false`. \n For DetailedConditions of types
-                    other than `Valid`, the Condition must be in the negative polarity.
-                    When they have `status` `true`, there is an error. There must
-                    be at least one entry in the `errors` Subcondition slice. When
-                    they have `status` `false`, there are no serious errors, and there
-                    must be zero entries in the `errors` slice. In either case, there
-                    may be entries in the `warnings` slice. \n Regardless of the polarity,
-                    the `reason` and `message` fields must be updated with either
-                    the detail of the reason (if there is one and only one entry in
-                    total across both the `errors` and `warnings` slices), or `MultipleReasons`
-                    if there is more than one entry."
-                  properties:
-                    errors:
-                      description: "Errors contains a slice of relevant error subconditions
-                        for this object. \n Subconditions are expected to appear when
-                        relevant (when there is a error), and disappear when not relevant.
-                        An empty slice here indicates no errors."
-                      items:
-                        description: "SubCondition is a Condition-like type intended
-                          for use as a subcondition inside a DetailedCondition. \n
-                          It contains a subset of the Condition fields. \n It is intended
-                          for warnings and errors, so `type` names should use abnormal-true
-                          polarity, that is, they should be of the form \"ErrorPresent:
-                          true\". \n The expected lifecycle for these errors is that
-                          they should only be present when the error or warning is,
-                          and should be removed when they are not relevant."
-                        properties:
-                          message:
-                            description: "Message is a human readable message indicating
-                              details about the transition. \n This may be an empty
-                              string."
-                            maxLength: 32768
-                            type: string
-                          reason:
-                            description: "Reason contains a programmatic identifier
-                              indicating the reason for the condition's last transition.
-                              Producers of specific condition types may define expected
-                              values and meanings for this field, and whether the
-                              values are considered a guaranteed API. \n The value
-                              should be a CamelCase string. \n This field may not
-                              be empty."
-                            maxLength: 1024
-                            minLength: 1
-                            pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
-                            type: string
-                          status:
-                            description: Status of the condition, one of True, False,
-                              Unknown.
-                            enum:
-                            - "True"
-                            - "False"
-                            - Unknown
-                            type: string
-                          type:
-                            description: "Type of condition in `CamelCase` or in `foo.example.com/CamelCase`.
-                              \n This must be in abnormal-true polarity, that is,
-                              `ErrorFound` or `controller.io/ErrorFound`. \n The regex
-                              it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)"
-                            maxLength: 316
-                            pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
-                            type: string
-                        required:
-                        - message
-                        - reason
-                        - status
-                        - type
-                        type: object
-                      type: array
-                    lastTransitionTime:
-                      description: lastTransitionTime is the last time the condition
-                        transitioned from one status to another. This should be when
-                        the underlying condition changed.  If that is not known, then
-                        using the time when the API field changed is acceptable.
-                      format: date-time
-                      type: string
-                    message:
-                      description: message is a human readable message indicating
-                        details about the transition. This may be an empty string.
-                      maxLength: 32768
-                      type: string
-                    observedGeneration:
-                      description: observedGeneration represents the .metadata.generation
-                        that the condition was set based upon. For instance, if .metadata.generation
-                        is currently 12, but the .status.conditions[x].observedGeneration
-                        is 9, the condition is out of date with respect to the current
-                        state of the instance.
-                      format: int64
-                      minimum: 0
-                      type: integer
-                    reason:
-                      description: reason contains a programmatic identifier indicating
-                        the reason for the condition's last transition. Producers
-                        of specific condition types may define expected values and
-                        meanings for this field, and whether the values are considered
-                        a guaranteed API. The value should be a CamelCase string.
-                        This field may not be empty.
-                      maxLength: 1024
-                      minLength: 1
-                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
-                      type: string
-                    status:
-                      description: status of the condition, one of True, False, Unknown.
-                      enum:
-                      - "True"
-                      - "False"
-                      - Unknown
-                      type: string
-                    type:
-                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
-                        --- Many .condition.type values are consistent across resources
-                        like Available, but because arbitrary conditions can be useful
-                        (see .node.status.conditions), the ability to deconflict is
-                        important. The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
-                      maxLength: 316
-                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
-                      type: string
-                    warnings:
-                      description: "Warnings contains a slice of relevant warning
-                        subconditions for this object. \n Subconditions are expected
-                        to appear when relevant (when there is a warning), and disappear
-                        when not relevant. An empty slice here indicates no warnings."
-                      items:
-                        description: "SubCondition is a Condition-like type intended
-                          for use as a subcondition inside a DetailedCondition. \n
-                          It contains a subset of the Condition fields. \n It is intended
-                          for warnings and errors, so `type` names should use abnormal-true
-                          polarity, that is, they should be of the form \"ErrorPresent:
-                          true\". \n The expected lifecycle for these errors is that
-                          they should only be present when the error or warning is,
-                          and should be removed when they are not relevant."
-                        properties:
-                          message:
-                            description: "Message is a human readable message indicating
-                              details about the transition. \n This may be an empty
-                              string."
-                            maxLength: 32768
-                            type: string
-                          reason:
-                            description: "Reason contains a programmatic identifier
-                              indicating the reason for the condition's last transition.
-                              Producers of specific condition types may define expected
-                              values and meanings for this field, and whether the
-                              values are considered a guaranteed API. \n The value
-                              should be a CamelCase string. \n This field may not
-                              be empty."
-                            maxLength: 1024
-                            minLength: 1
-                            pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
-                            type: string
-                          status:
-                            description: Status of the condition, one of True, False,
-                              Unknown.
-                            enum:
-                            - "True"
-                            - "False"
-                            - Unknown
-                            type: string
-                          type:
-                            description: "Type of condition in `CamelCase` or in `foo.example.com/CamelCase`.
-                              \n This must be in abnormal-true polarity, that is,
-                              `ErrorFound` or `controller.io/ErrorFound`. \n The regex
-                              it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)"
-                            maxLength: 316
-                            pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
-                            type: string
-                        required:
-                        - message
-                        - reason
-                        - status
-                        - type
-                        type: object
-                      type: array
-                  required:
-                  - lastTransitionTime
-                  - message
-                  - reason
-                  - status
-                  - type
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - type
-                x-kubernetes-list-type: map
-            type: object
-        required:
-        - spec
-        type: object
-    served: true
-    storage: true
-    subresources:
-      status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []
----
-# Source: flyte/charts/contour/templates/00-crds.yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  annotations:
-    controller-gen.kubebuilder.io/version: v0.6.0
-  creationTimestamp: null
-  name: contourdeployments.projectcontour.io
-spec:
-  preserveUnknownFields: false
-  group: projectcontour.io
-  names:
-    kind: ContourDeployment
-    listKind: ContourDeploymentList
-    plural: contourdeployments
-    shortNames:
-    - contourdeploy
-    singular: contourdeployment
-  scope: Namespaced
-  versions:
-  - name: v1alpha1
-    schema:
-      openAPIV3Schema:
-        description: ContourDeployment is the schema for a Contour Deployment.
-        properties:
-          apiVersion:
-            description: 'APIVersion defines the versioned schema of this representation
-              of an object. Servers should convert recognized schemas to the latest
-              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
-            type: string
-          kind:
-            description: 'Kind is a string value representing the REST resource this
-              object represents. Servers may infer this from the endpoint the client
-              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
-            type: string
-          metadata:
-            type: object
-          spec:
-            description: ContourDeploymentSpec defines the parameters of how a Contour
-              instance should be configured.
-            properties:
-              config:
-                description: Config is the config that the instances of Contour are
-                  to utilize.
-                properties:
-                  debug:
-                    default:
-                      kubernetesLogLevel: 0
-                      logLevel: info
-                    description: Debug contains parameters to enable debug logging
-                      and debug interfaces inside Contour.
-                    properties:
-                      address:
-                        description: Defines the Contour debug address interface.
-                        type: string
-                      kubernetesLogLevel:
-                        default: 0
-                        description: "KubernetesDebugLogLevel defines the log level
-                          which Contour will use when outputting Kubernetes specific
-                          log information. \n Details: https://github.com/kubernetes/community/blob/master/contributors/devel/sig-instrumentation/logging.md"
-                        maximum: 9
-                        minimum: 0
-                        type: integer
-                      logLevel:
-                        description: DebugLogLevel defines the log level which Contour
-                          will use when outputting log information.
-                        enum:
-                        - info
-                        - debug
-                        type: string
-                      port:
-                        description: Defines the Contour debug address port.
-                        type: integer
-                    required:
-                    - logLevel
-                    type: object
-                  enableExternalNameService:
-                    default: false
-                    description: EnableExternalNameService allows processing of ExternalNameServices
-                      Defaults to disabled for security reasons.
-                    type: boolean
-                  envoy:
-                    default:
-                      cluster:
-                        dnsLookupFamily: auto
-                      defaultHTTPVersions:
-                      - HTTP/1.1
-                      - HTTP/2
-                      http:
-                        accessLog: /dev/stdout
-                        address: 0.0.0.0
-                        port: 8080
-                      https:
-                        accessLog: /dev/stdout
-                        address: 0.0.0.0
-                        port: 8443
-                      listener:
-                        connectionBalancer: ""
-                        disableAllowChunkedLength: false
-                        tls:
-                          cipherSuites:
-                          - '[ECDHE-ECDSA-AES128-GCM-SHA256|ECDHE-ECDSA-CHACHA20-POLY1305]'
-                          - '[ECDHE-RSA-AES128-GCM-SHA256|ECDHE-RSA-CHACHA20-POLY1305]'
-                          - ECDHE-ECDSA-AES256-GCM-SHA384
-                          - ECDHE-RSA-AES256-GCM-SHA384
-                          minimumProtocolVersion: "1.2"
-                        useProxyProtocol: false
-                      logging:
-                        accessLogFormat: envoy
-                      metrics:
-                        address: 0.0.0.0
-                        port: 8002
-                      network:
-                        adminPort: 9001
-                      service:
-                        name: envoy
-                        namespace: projectcontour
-                    description: Envoy contains parameters for Envoy as well as how
-                      to optionally configure a managed Envoy fleet.
-                    properties:
-                      clientCertificate:
-                        description: ClientCertificate defines the namespace/name
-                          of the Kubernetes secret containing the client certificate
-                          and private key to be used when establishing TLS connection
-                          to upstream cluster.
-                        properties:
-                          name:
-                            type: string
-                          namespace:
-                            type: string
-                        required:
-                        - name
-                        - namespace
-                        type: object
-                      cluster:
-                        description: Cluster holds various configurable Envoy cluster
-                          values that can be set in the config file.
-                        properties:
-                          dnsLookupFamily:
-                            default: auto
-                            description: "DNSLookupFamily defines how external names
-                              are looked up When configured as V4, the DNS resolver
-                              will only perform a lookup for addresses in the IPv4
-                              family. If V6 is configured, the DNS resolver will only
-                              perform a lookup for addresses in the IPv6 family. If
-                              AUTO is configured, the DNS resolver will first perform
-                              a lookup for addresses in the IPv6 family and fallback
-                              to a lookup for addresses in the IPv4 family. Note:
-                              This only applies to externalName clusters. \n See https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/cluster/v3/cluster.proto.html#envoy-v3-api-enum-config-cluster-v3-cluster-dnslookupfamily
-                              for more information."
-                            enum:
-                            - auto
-                            - v4
-                            - v6
-                            type: string
-                        required:
-                        - dnsLookupFamily
-                        type: object
-                      defaultHTTPVersions:
-                        description: DefaultHTTPVersions defines the default set of
-                          HTTPS versions the proxy should accept. HTTP versions are
-                          strings of the form "HTTP/xx". Supported versions are "HTTP/1.1"
-                          and "HTTP/2".
-                        items:
-                          description: HTTPVersionType is the name of a supported
-                            HTTP version.
-                          enum:
-                          - HTTP/1.1
-                          - HTTP/2
-                          type: string
-                        type: array
-                      http:
-                        default:
-                          accessLog: /dev/stdout
-                          address: 0.0.0.0
-                          port: 8080
-                        description: Defines the HTTP Listener for Envoy.
-                        properties:
-                          accessLog:
-                            description: AccessLog defines where Envoy logs are outputted
-                              for this listener.
-                            type: string
-                          address:
-                            description: Defines an Envoy Listener Address.
-                            minLength: 1
-                            type: string
-                          port:
-                            description: Defines an Envoy listener Port.
-                            type: integer
-                        required:
-                        - accessLog
-                        - address
-                        - port
-                        type: object
-                      https:
-                        default:
-                          accessLog: /dev/stdout
-                          address: 0.0.0.0
-                          port: 8443
-                        description: Defines the HTTP Listener for Envoy.
-                        properties:
-                          accessLog:
-                            description: AccessLog defines where Envoy logs are outputted
-                              for this listener.
-                            type: string
-                          address:
-                            description: Defines an Envoy Listener Address.
-                            minLength: 1
-                            type: string
-                          port:
-                            description: Defines an Envoy listener Port.
-                            type: integer
-                        required:
-                        - accessLog
-                        - address
-                        - port
-                        type: object
-                      listener:
-                        description: Listener hold various configurable Envoy listener
-                          values.
-                        properties:
-                          connectionBalancer:
-                            description: ConnectionBalancer. If the value is exact,
-                              the listener will use the exact connection balancer
-                              See https://www.envoyproxy.io/docs/envoy/latest/api-v2/api/v2/listener.proto#envoy-api-msg-listener-connectionbalanceconfig
-                              for more information.
-                            enum:
-                            - ""
-                            - exact
-                            type: string
-                          disableAllowChunkedLength:
-                            description: 'DisableAllowChunkedLength disables the RFC-compliant
-                              Envoy behavior to strip the "Content-Length" header
-                              if "Transfer-Encoding: chunked" is also set. This is
-                              an emergency off-switch to revert back to Envoy''s default
-                              behavior in case of failures. Please file an issue if
-                              failures are encountered. See: https://github.com/projectcontour/contour/issues/3221'
-                            type: boolean
-                          tls:
-                            description: TLS holds various configurable Envoy TLS
-                              listener values.
-                            properties:
-                              cipherSuites:
-                                description: "CipherSuites defines the TLS ciphers
-                                  to be supported by Envoy TLS listeners when negotiating
-                                  TLS 1.2. Ciphers are validated against the set that
-                                  Envoy supports by default. This parameter should
-                                  only be used by advanced users. Note that these
-                                  will be ignored when TLS 1.3 is in use. \n See:
-                                  https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/transport_sockets/tls/v3/common.proto#extensions-transport-sockets-tls-v3-tlsparameters
-                                  Note: This list is a superset of what is valid for
-                                  stock Envoy builds and those using BoringSSL FIPS."
-                                items:
-                                  enum:
-                                  - '[ECDHE-ECDSA-AES128-GCM-SHA256|ECDHE-ECDSA-CHACHA20-POLY1305]'
-                                  - '[ECDHE-RSA-AES128-GCM-SHA256|ECDHE-RSA-CHACHA20-POLY1305]'
-                                  - ECDHE-ECDSA-AES128-GCM-SHA256
-                                  - ECDHE-RSA-AES128-GCM-SHA256
-                                  - ECDHE-ECDSA-AES128-SHA
-                                  - ECDHE-RSA-AES128-SHA
-                                  - AES128-GCM-SHA256
-                                  - AES128-SHA
-                                  - ECDHE-ECDSA-AES256-GCM-SHA384
-                                  - ECDHE-RSA-AES256-GCM-SHA384
-                                  - ECDHE-ECDSA-AES256-SHA
-                                  - ECDHE-RSA-AES256-SHA
-                                  - AES256-GCM-SHA384
-                                  - AES256-SHA
-                                  type: string
-                                type: array
-                              minimumProtocolVersion:
-                                description: MinimumProtocolVersion is the minimum
-                                  TLS version this vhost should negotiate. Valid options
-                                  are `1.2` (default) and `1.3`.
-                                enum:
-                                - "1.2"
-                                - "1.3"
-                                type: string
-                            required:
-                            - cipherSuites
-                            - minimumProtocolVersion
-                            type: object
-                          useProxyProtocol:
-                            description: Use PROXY protocol for all listeners.
-                            type: boolean
-                        required:
-                        - connectionBalancer
-                        - disableAllowChunkedLength
-                        - tls
-                        - useProxyProtocol
-                        type: object
-                      logging:
-                        description: Logging defines how Envoy's logs can be configured.
-                        properties:
-                          accessLogFormat:
-                            description: AccessLogFormat sets the global access log
-                              format. Valid options are 'envoy' or 'json'
-                            enum:
-                            - envoy
-                            - json
-                            type: string
-                          accessLogFormatString:
-                            description: AccessLogFormatString sets the access log
-                              format when format is set to `envoy`. When empty, Envoy's
-                              default format is used.
-                            type: string
-                          jsonFields:
-                            description: AccessLogFields sets the fields that JSON
-                              logging will output when AccessLogFormat is json.
-                            items:
-                              type: string
-                            type: array
-                        required:
-                        - accessLogFormat
-                        type: object
-                      metrics:
-                        default:
-                          address: 0.0.0.0
-                          port: 8002
-                        description: Metrics defines the endpoints Envoy use to serve
-                          to metrics.
-                        properties:
-                          address:
-                            description: Defines the metrics address interface.
-                            maxLength: 253
-                            minLength: 1
-                            type: string
-                          port:
-                            description: Defines the metrics port.
-                            type: integer
-                        required:
-                        - address
-                        - port
-                        type: object
-                      network:
-                        description: Network holds various configurable Envoy network
-                          values.
-                        properties:
-                          adminPort:
-                            default: 9001
-                            description: Configure the port used to access the Envoy
-                              Admin interface. If configured to port "0" then the
-                              admin interface is disabled.
-                            type: integer
-                          numTrustedHops:
-                            description: "XffNumTrustedHops defines the number of
-                              additional ingress proxy hops from the right side of
-                              the x-forwarded-for HTTP header to trust when determining
-                              the origin client’s IP address. \n See https://www.envoyproxy.io/docs/envoy/v1.17.0/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto?highlight=xff_num_trusted_hops
-                              for more information."
-                            format: int32
-                            type: integer
-                        required:
-                        - adminPort
-                        type: object
-                      service:
-                        default:
-                          name: envoy
-                          namespace: projectcontour
-                        description: Service holds Envoy service parameters for setting
-                          Ingress status.
-                        properties:
-                          name:
-                            type: string
-                          namespace:
-                            type: string
-                        required:
-                        - name
-                        - namespace
-                        type: object
-                      timeouts:
-                        description: Timeouts holds various configurable timeouts
-                          that can be set in the config file.
-                        properties:
-                          connectionIdleTimeout:
-                            description: "ConnectionIdleTimeout defines how long the
-                              proxy should wait while there are no active requests
-                              (for HTTP/1.1) or streams (for HTTP/2) before terminating
-                              an HTTP connection. Set to \"infinity\" to disable the
-                              timeout entirely. \n See https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/core/v3/protocol.proto#envoy-v3-api-field-config-core-v3-httpprotocoloptions-idle-timeout
-                              for more information."
-                            type: string
-                          connectionShutdownGracePeriod:
-                            description: "ConnectionShutdownGracePeriod defines how
-                              long the proxy will wait between sending an initial
-                              GOAWAY frame and a second, final GOAWAY frame when terminating
-                              an HTTP/2 connection. During this grace period, the
-                              proxy will continue to respond to new streams. After
-                              the final GOAWAY frame has been sent, the proxy will
-                              refuse new streams. \n See https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-field-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-drain-timeout
-                              for more information."
-                            type: string
-                          delayedCloseTimeout:
-                            description: "DelayedCloseTimeout defines how long envoy
-                              will wait, once connection close processing has been
-                              initiated, for the downstream peer to close the connection
-                              before Envoy closes the socket associated with the connection.
-                              \n Setting this timeout to 'infinity' will disable it,
-                              equivalent to setting it to '0' in Envoy. Leaving it
-                              unset will result in the Envoy default value being used.
-                              \n See https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-field-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-delayed-close-timeout
-                              for more information."
-                            type: string
-                          maxConnectionDuration:
-                            description: "MaxConnectionDuration defines the maximum
-                              period of time after an HTTP connection has been established
-                              from the client to the proxy before it is closed by
-                              the proxy, regardless of whether there has been activity
-                              or not. Omit or set to \"infinity\" for no max duration.
-                              \n See https://www.envoyproxy.io/docs/envoy/latest/api-v3/config/core/v3/protocol.proto#envoy-v3-api-field-config-core-v3-httpprotocoloptions-max-connection-duration
-                              for more information."
-                            type: string
-                          requestTimeout:
-                            description: "RequestTimeout sets the client request timeout
-                              globally for Contour. Note that this is a timeout for
-                              the entire request, not an idle timeout. Omit or set
-                              to \"infinity\" to disable the timeout entirely. \n
-                              See https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-field-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-request-timeout
-                              for more information."
-                            type: string
-                          streamIdleTimeout:
-                            description: "StreamIdleTimeout defines how long the proxy
-                              should wait while there is no request activity (for
-                              HTTP/1.1) or stream activity (for HTTP/2) before terminating
-                              the HTTP request or stream. Set to \"infinity\" to disable
-                              the timeout entirely. \n See https://www.envoyproxy.io/docs/envoy/latest/api-v3/extensions/filters/network/http_connection_manager/v3/http_connection_manager.proto#envoy-v3-api-field-extensions-filters-network-http-connection-manager-v3-httpconnectionmanager-stream-idle-timeout
-                              for more information."
-                            type: string
-                        type: object
-                    required:
-                    - cluster
-                    - defaultHTTPVersions
-                    - http
-                    - https
-                    - listener
-                    - logging
-                    - metrics
-                    - network
-                    - service
-                    type: object
-                  gateway:
-                    description: Gateway contains parameters for the gateway-api Gateway
-                      that Contour is configured to serve traffic.
-                    properties:
-                      controllerName:
-                        default: projectcontour.io/projectcontour/contour
-                        description: ControllerName is used to determine whether Contour
-                          should reconcile a GatewayClass. The string takes the form
-                          of "projectcontour.io/<namespace>/contour". If unset, the
-                          gatewayclass controller will not be started.
-                        type: string
-                    required:
-                    - controllerName
-                    type: object
-                  health:
-                    default:
-                      address: 0.0.0.0
-                      port: 8000
-                    description: Health contains parameters to configure endpoints
-                      which Contour exposes to respond to Kubernetes health checks.
-                    properties:
-                      address:
-                        description: Defines the Contour health address interface.
-                        minLength: 1
-                        type: string
-                      port:
-                        description: Defines the Contour health port.
-                        type: integer
-                    required:
-                    - address
-                    - port
-                    type: object
-                  httpproxy:
-                    default:
-                      disablePermitInsecure: false
-                    description: HTTPProxy defines parameters on HTTPProxy.
-                    properties:
-                      disablePermitInsecure:
-                        description: DisablePermitInsecure disables the use of the
-                          permitInsecure field in HTTPProxy.
-                        type: boolean
-                      fallbackCertificate:
-                        description: FallbackCertificate defines the namespace/name
-                          of the Kubernetes secret to use as fallback when a non-SNI
-                          request is received.
-                        properties:
-                          name:
-                            type: string
-                          namespace:
-                            type: string
-                        required:
-                        - name
-                        - namespace
-                        type: object
-                      rootNamespaces:
-                        description: Restrict Contour to searching these namespaces
-                          for root ingress routes.
-                        items:
-                          type: string
-                        type: array
-                    required:
-                    - disablePermitInsecure
-                    type: object
-                  ingress:
-                    description: Ingress contains parameters for ingress options.
-                    properties:
-                      className:
-                        description: Ingress Class Name Contour should use.
-                        type: string
-                      statusAddress:
-                        description: Address to set in Ingress object status.
-                        type: string
-                    type: object
-                  leaderElection:
-                    default:
-                      configmap:
-                        name: leader-elect
-                        namespace: projectcontour
-                      disableLeaderElection: false
-                      leaseDuration: 15s
-                      renewDeadline: 10s
-                      retryPeriod: 2s
-                    description: LeaderElection contains leader election parameters.
-                    properties:
-                      configmap:
-                        description: NamespacedName defines the namespace/name of
-                          the Kubernetes resource referred from the config file. Used
-                          for Contour config YAML file parsing, otherwise we could
-                          use K8s types.NamespacedName.
-                        properties:
-                          name:
-                            type: string
-                          namespace:
-                            type: string
-                        required:
-                        - name
-                        - namespace
-                        type: object
-                      disableLeaderElection:
-                        type: boolean
-                      leaseDuration:
-                        type: string
-                      renewDeadline:
-                        type: string
-                      retryPeriod:
-                        type: string
-                    required:
-                    - disableLeaderElection
-                    type: object
-                  metrics:
-                    default:
-                      address: 0.0.0.0
-                      port: 8000
-                    description: Metrics defines the endpoints Contour uses to serve
-                      to metrics.
-                    properties:
-                      address:
-                        description: Defines the metrics address interface.
-                        maxLength: 253
-                        minLength: 1
-                        type: string
-                      port:
-                        description: Defines the metrics port.
-                        type: integer
-                    required:
-                    - address
-                    - port
-                    type: object
-                  policy:
-                    description: Policy specifies default policy applied if not overridden
-                      by the user
-                    properties:
-                      applyToIngress:
-                        description: ApplyToIngress determines if the Policies will
-                          apply to ingress objects
-                        type: boolean
-                      requestHeaders:
-                        description: RequestHeadersPolicy defines the request headers
-                          set/removed on all routes
-                        properties:
-                          remove:
-                            items:
-                              type: string
-                            type: array
-                          set:
-                            additionalProperties:
-                              type: string
-                            type: object
-                        type: object
-                      responseHeaders:
-                        description: ResponseHeadersPolicy defines the response headers
-                          set/removed on all routes
-                        properties:
-                          remove:
-                            items:
-                              type: string
-                            type: array
-                          set:
-                            additionalProperties:
-                              type: string
-                            type: object
-                        type: object
-                    type: object
-                  rateLimitService:
-                    description: RateLimitService optionally holds properties of the
-                      Rate Limit Service to be used for global rate limiting.
-                    properties:
-                      domain:
-                        description: Domain is passed to the Rate Limit Service.
-                        type: string
-                      enableXRateLimitHeaders:
-                        description: "EnableXRateLimitHeaders defines whether to include
-                          the X-RateLimit headers X-RateLimit-Limit, X-RateLimit-Remaining,
-                          and X-RateLimit-Reset (as defined by the IETF Internet-Draft
-                          linked below), on responses to clients when the Rate Limit
-                          Service is consulted for a request. \n ref. https://tools.ietf.org/id/draft-polli-ratelimit-headers-03.html"
-                        type: boolean
-                      extensionService:
-                        description: ExtensionService identifies the extension service
-                          defining the RLS.
-                        properties:
-                          name:
-                            type: string
-                          namespace:
-                            type: string
-                        required:
-                        - name
-                        - namespace
-                        type: object
-                      failOpen:
-                        description: FailOpen defines whether to allow requests to
-                          proceed when the Rate Limit Service fails to respond with
-                          a valid rate limit decision within the timeout defined on
-                          the extension service.
-                        type: boolean
-                    required:
-                    - domain
-                    - enableXRateLimitHeaders
-                    - failOpen
-                    type: object
-                  xdsServer:
-                    default:
-                      address: 0.0.0.0
-                      port: 8001
-                      tls:
-                        caFile: /certs/ca.crt
-                        certFile: /certs/tls.crt
-                        insecure: false
-                        keyFile: /certs/tls.key
-                      type: contour
-                    description: XDSServer contains parameters for the xDS server.
-                    properties:
-                      address:
-                        description: Defines the xDS gRPC API address which Contour
-                          will serve.
-                        minLength: 1
-                        type: string
-                      port:
-                        description: Defines the xDS gRPC API port which Contour will
-                          serve.
-                        type: integer
-                      tls:
-                        description: TLS holds TLS file config details.
-                        properties:
-                          caFile:
-                            description: CA filename.
-                            type: string
-                          certFile:
-                            description: Client certificate filename.
-                            type: string
-                          insecure:
-                            description: Allow serving the xDS gRPC API without TLS.
-                            type: boolean
-                          keyFile:
-                            description: Client key filename.
-                            type: string
-                        required:
-                        - insecure
-                        type: object
-                      type:
-                        description: Defines the XDSServer to use for `contour serve`.
-                        enum:
-                        - contour
-                        - envoy
-                        type: string
-                    required:
-                    - address
-                    - port
-                    - type
-                    type: object
-                type: object
-              replicas:
-                default: 2
-                description: Replicas is the desired number of Contour replicas. If
-                  unset, defaults to 2.
-                format: int32
-                minimum: 0
-                type: integer
-            required:
-            - config
-            type: object
-          status:
-            description: ContourDeploymentStatus defines the observed state of a ContourDeployment
-              resource.
-            properties:
-              conditions:
-                description: "Conditions contains the current status of the Contour
-                  resource. \n Contour will update a single condition, `Valid`, that
-                  is in normal-true polarity. \n Contour will not modify any other
-                  Conditions set in this block, in case some other controller wants
-                  to add a Condition."
-                items:
-                  description: "DetailedCondition is an extension of the normal Kubernetes
-                    conditions, with two extra fields to hold sub-conditions, which
-                    provide more detailed reasons for the state (True or False) of
-                    the condition. \n `errors` holds information about sub-conditions
-                    which are fatal to that condition and render its state False.
-                    \n `warnings` holds information about sub-conditions which are
-                    not fatal to that condition and do not force the state to be False.
-                    \n Remember that Conditions have a type, a status, and a reason.
-                    \n The type is the type of the condition, the most important one
-                    in this CRD set is `Valid`. `Valid` is a positive-polarity condition:
-                    when it is `status: true` there are no problems. \n In more detail,
-                    `status: true` means that the object is has been ingested into
-                    Contour with no errors. `warnings` may still be present, and will
-                    be indicated in the Reason field. There must be zero entries in
-                    the `errors` slice in this case. \n `Valid`, `status: false` means
-                    that the object has had one or more fatal errors during processing
-                    into Contour.  The details of the errors will be present under
-                    the `errors` field. There must be at least one error in the `errors`
-                    slice if `status` is `false`. \n For DetailedConditions of types
-                    other than `Valid`, the Condition must be in the negative polarity.
-                    When they have `status` `true`, there is an error. There must
-                    be at least one entry in the `errors` Subcondition slice. When
-                    they have `status` `false`, there are no serious errors, and there
-                    must be zero entries in the `errors` slice. In either case, there
-                    may be entries in the `warnings` slice. \n Regardless of the polarity,
-                    the `reason` and `message` fields must be updated with either
-                    the detail of the reason (if there is one and only one entry in
-                    total across both the `errors` and `warnings` slices), or `MultipleReasons`
-                    if there is more than one entry."
-                  properties:
-                    errors:
-                      description: "Errors contains a slice of relevant error subconditions
-                        for this object. \n Subconditions are expected to appear when
-                        relevant (when there is a error), and disappear when not relevant.
-                        An empty slice here indicates no errors."
-                      items:
-                        description: "SubCondition is a Condition-like type intended
-                          for use as a subcondition inside a DetailedCondition. \n
-                          It contains a subset of the Condition fields. \n It is intended
-                          for warnings and errors, so `type` names should use abnormal-true
-                          polarity, that is, they should be of the form \"ErrorPresent:
-                          true\". \n The expected lifecycle for these errors is that
-                          they should only be present when the error or warning is,
-                          and should be removed when they are not relevant."
-                        properties:
-                          message:
-                            description: "Message is a human readable message indicating
-                              details about the transition. \n This may be an empty
-                              string."
-                            maxLength: 32768
-                            type: string
-                          reason:
-                            description: "Reason contains a programmatic identifier
-                              indicating the reason for the condition's last transition.
-                              Producers of specific condition types may define expected
-                              values and meanings for this field, and whether the
-                              values are considered a guaranteed API. \n The value
-                              should be a CamelCase string. \n This field may not
-                              be empty."
-                            maxLength: 1024
-                            minLength: 1
-                            pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
-                            type: string
-                          status:
-                            description: Status of the condition, one of True, False,
-                              Unknown.
-                            enum:
-                            - "True"
-                            - "False"
-                            - Unknown
-                            type: string
-                          type:
-                            description: "Type of condition in `CamelCase` or in `foo.example.com/CamelCase`.
-                              \n This must be in abnormal-true polarity, that is,
-                              `ErrorFound` or `controller.io/ErrorFound`. \n The regex
-                              it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)"
-                            maxLength: 316
-                            pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
-                            type: string
-                        required:
-                        - message
-                        - reason
-                        - status
-                        - type
-                        type: object
-                      type: array
-                    lastTransitionTime:
-                      description: lastTransitionTime is the last time the condition
-                        transitioned from one status to another. This should be when
-                        the underlying condition changed.  If that is not known, then
-                        using the time when the API field changed is acceptable.
-                      format: date-time
-                      type: string
-                    message:
-                      description: message is a human readable message indicating
-                        details about the transition. This may be an empty string.
-                      maxLength: 32768
-                      type: string
-                    observedGeneration:
-                      description: observedGeneration represents the .metadata.generation
-                        that the condition was set based upon. For instance, if .metadata.generation
-                        is currently 12, but the .status.conditions[x].observedGeneration
-                        is 9, the condition is out of date with respect to the current
-                        state of the instance.
-                      format: int64
-                      minimum: 0
-                      type: integer
-                    reason:
-                      description: reason contains a programmatic identifier indicating
-                        the reason for the condition's last transition. Producers
-                        of specific condition types may define expected values and
-                        meanings for this field, and whether the values are considered
-                        a guaranteed API. The value should be a CamelCase string.
-                        This field may not be empty.
-                      maxLength: 1024
-                      minLength: 1
-                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
-                      type: string
-                    status:
-                      description: status of the condition, one of True, False, Unknown.
-                      enum:
-                      - "True"
-                      - "False"
-                      - Unknown
-                      type: string
-                    type:
-                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
-                        --- Many .condition.type values are consistent across resources
-                        like Available, but because arbitrary conditions can be useful
-                        (see .node.status.conditions), the ability to deconflict is
-                        important. The regex it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)
-                      maxLength: 316
-                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
-                      type: string
-                    warnings:
-                      description: "Warnings contains a slice of relevant warning
-                        subconditions for this object. \n Subconditions are expected
-                        to appear when relevant (when there is a warning), and disappear
-                        when not relevant. An empty slice here indicates no warnings."
-                      items:
-                        description: "SubCondition is a Condition-like type intended
-                          for use as a subcondition inside a DetailedCondition. \n
-                          It contains a subset of the Condition fields. \n It is intended
-                          for warnings and errors, so `type` names should use abnormal-true
-                          polarity, that is, they should be of the form \"ErrorPresent:
-                          true\". \n The expected lifecycle for these errors is that
-                          they should only be present when the error or warning is,
-                          and should be removed when they are not relevant."
-                        properties:
-                          message:
-                            description: "Message is a human readable message indicating
-                              details about the transition. \n This may be an empty
-                              string."
-                            maxLength: 32768
-                            type: string
-                          reason:
-                            description: "Reason contains a programmatic identifier
-                              indicating the reason for the condition's last transition.
-                              Producers of specific condition types may define expected
-                              values and meanings for this field, and whether the
-                              values are considered a guaranteed API. \n The value
-                              should be a CamelCase string. \n This field may not
-                              be empty."
-                            maxLength: 1024
-                            minLength: 1
-                            pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
-                            type: string
-                          status:
-                            description: Status of the condition, one of True, False,
-                              Unknown.
-                            enum:
-                            - "True"
-                            - "False"
-                            - Unknown
-                            type: string
-                          type:
-                            description: "Type of condition in `CamelCase` or in `foo.example.com/CamelCase`.
-                              \n This must be in abnormal-true polarity, that is,
-                              `ErrorFound` or `controller.io/ErrorFound`. \n The regex
-                              it matches is (dns1123SubdomainFmt/)?(qualifiedNameFmt)"
-                            maxLength: 316
-                            pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
-                            type: string
-                        required:
-                        - message
-                        - reason
-                        - status
-                        - type
-                        type: object
-                      type: array
-                  required:
-                  - lastTransitionTime
-                  - message
-                  - reason
-                  - status
-                  - type
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - type
-                x-kubernetes-list-type: map
-            type: object
-        type: object
-    served: true
-    storage: true
-    subresources:
-      status: {}
-status:
-  acceptedNames:
-    kind: ""
-    plural: ""
-  conditions: []
-  storedVersions: []
----
-# Source: flyte/charts/contour/templates/00-crds.yaml
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  annotations:
-    controller-gen.kubebuilder.io/version: v0.6.0
+    controller-gen.kubebuilder.io/version: v0.5.0
   creationTimestamp: null
   name: extensionservices.projectcontour.io
 spec:
@@ -2651,12 +879,11 @@ spec:
                 description: The timeout policy for requests to the services.
                 properties:
                   idle:
-                    description: Timeout for how long the proxy should wait while
-                      there is no activity during single request/response (for HTTP/1.1)
-                      or stream (for HTTP/2). Timeout will not trigger while HTTP/1.1
-                      connection is idle between two consecutive requests. If not
-                      specified, there is no per-route idle timeout, though a connection
-                      manager-wide stream_idle_timeout default of 5m still applies.
+                    description: Timeout after which, if there are no active requests
+                      for this route, the connection between Envoy and the backend
+                      or Envoy and the external client will be closed. If not specified,
+                      there is no per-route idle timeout, though a connection manager-wide
+                      stream_idle_timeout default of 5m still applies.
                     pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms)|(\d*(\.\d*)?us)|(\d*(\.\d*)?µs)|(\d*(\.\d*)?ns))+|infinity|infinite)$
                     type: string
                   response:
@@ -2671,8 +898,8 @@ spec:
                   service's certificate
                 properties:
                   caSecret:
-                    description: Name or namespaced name of the Kubernetes secret
-                      used to validate the certificate presented by the backend
+                    description: Name of the Kubernetes secret be used to validate
+                      the certificate presented by the backend
                     type: string
                   subjectName:
                     description: Key which is expected to be present in the 'subjectAltName'
@@ -2915,7 +1142,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.6.0
+    controller-gen.kubebuilder.io/version: v0.5.0
   creationTimestamp: null
   name: httpproxies.projectcontour.io
 spec:
@@ -3045,12 +1272,6 @@ spec:
                   - name
                   type: object
                 type: array
-              ingressClassName:
-                description: IngressClassName optionally specifies the ingress class
-                  to use for this HTTPProxy. This replaces the deprecated `kubernetes.io/ingress.class`
-                  annotation. For backwards compatibility, when that annotation is
-                  set, it is given precedence over this field.
-                type: string
               routes:
                 description: Routes are the ingress routes. If TCPProxy is present,
                   Routes is ignored.
@@ -3131,64 +1352,6 @@ spec:
                           prefix:
                             description: Prefix defines a prefix match for a request.
                             type: string
-                        type: object
-                      type: array
-                    cookieRewritePolicies:
-                      description: The policies for rewriting Set-Cookie header attributes.
-                        Note that rewritten cookie names must be unique in this list.
-                        Order rewrite policies are specified in does not matter.
-                      items:
-                        properties:
-                          domainRewrite:
-                            description: DomainRewrite enables rewriting the Set-Cookie
-                              Domain element. If not set, Domain will not be rewritten.
-                            properties:
-                              value:
-                                description: Value is the value to rewrite the Domain
-                                  attribute to. For now this is required.
-                                maxLength: 4096
-                                minLength: 1
-                                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                                type: string
-                            required:
-                            - value
-                            type: object
-                          name:
-                            description: Name is the name of the cookie for which
-                              attributes will be rewritten.
-                            maxLength: 4096
-                            minLength: 1
-                            pattern: ^[^()<>@,;:\\"\/[\]?={} \t\x7f\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f]+$
-                            type: string
-                          pathRewrite:
-                            description: PathRewrite enables rewriting the Set-Cookie
-                              Path element. If not set, Path will not be rewritten.
-                            properties:
-                              value:
-                                description: Value is the value to rewrite the Path
-                                  attribute to. For now this is required.
-                                maxLength: 4096
-                                minLength: 1
-                                pattern: ^[^;\x7f\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f]+$
-                                type: string
-                            required:
-                            - value
-                            type: object
-                          sameSite:
-                            description: SameSite enables rewriting the Set-Cookie
-                              SameSite element. If not set, SameSite attribute will
-                              not be rewritten.
-                            enum:
-                            - Strict
-                            - Lax
-                            - None
-                            type: string
-                          secure:
-                            description: Secure enables rewriting the Set-Cookie Secure
-                              element. If not set, Secure attribute will not be rewritten.
-                            type: boolean
-                        required:
-                        - name
                         type: object
                       type: array
                     enableWebsockets:
@@ -3664,65 +1827,6 @@ spec:
                         description: Service defines an Kubernetes Service to proxy
                           traffic.
                         properties:
-                          cookieRewritePolicies:
-                            description: The policies for rewriting Set-Cookie header
-                              attributes.
-                            items:
-                              properties:
-                                domainRewrite:
-                                  description: DomainRewrite enables rewriting the
-                                    Set-Cookie Domain element. If not set, Domain
-                                    will not be rewritten.
-                                  properties:
-                                    value:
-                                      description: Value is the value to rewrite the
-                                        Domain attribute to. For now this is required.
-                                      maxLength: 4096
-                                      minLength: 1
-                                      pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                                      type: string
-                                  required:
-                                  - value
-                                  type: object
-                                name:
-                                  description: Name is the name of the cookie for
-                                    which attributes will be rewritten.
-                                  maxLength: 4096
-                                  minLength: 1
-                                  pattern: ^[^()<>@,;:\\"\/[\]?={} \t\x7f\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f]+$
-                                  type: string
-                                pathRewrite:
-                                  description: PathRewrite enables rewriting the Set-Cookie
-                                    Path element. If not set, Path will not be rewritten.
-                                  properties:
-                                    value:
-                                      description: Value is the value to rewrite the
-                                        Path attribute to. For now this is required.
-                                      maxLength: 4096
-                                      minLength: 1
-                                      pattern: ^[^;\x7f\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f]+$
-                                      type: string
-                                  required:
-                                  - value
-                                  type: object
-                                sameSite:
-                                  description: SameSite enables rewriting the Set-Cookie
-                                    SameSite element. If not set, SameSite attribute
-                                    will not be rewritten.
-                                  enum:
-                                  - Strict
-                                  - Lax
-                                  - None
-                                  type: string
-                                secure:
-                                  description: Secure enables rewriting the Set-Cookie
-                                    Secure element. If not set, Secure attribute will
-                                    not be rewritten.
-                                  type: boolean
-                              required:
-                              - name
-                              type: object
-                            type: array
                           mirror:
                             description: If Mirror is true the Service will receive
                               a read only mirror of the traffic for this route.
@@ -3824,9 +1928,8 @@ spec:
                               the backend service's certificate
                             properties:
                               caSecret:
-                                description: Name or namespaced name of the Kubernetes
-                                  secret used to validate the certificate presented
-                                  by the backend
+                                description: Name of the Kubernetes secret be used
+                                  to validate the certificate presented by the backend
                                 type: string
                               subjectName:
                                 description: Key which is expected to be present in
@@ -3852,12 +1955,11 @@ spec:
                       description: The timeout policy for this route.
                       properties:
                         idle:
-                          description: Timeout for how long the proxy should wait
-                            while there is no activity during single request/response
-                            (for HTTP/1.1) or stream (for HTTP/2). Timeout will not
-                            trigger while HTTP/1.1 connection is idle between two
-                            consecutive requests. If not specified, there is no per-route
-                            idle timeout, though a connection manager-wide stream_idle_timeout
+                          description: Timeout after which, if there are no active
+                            requests for this route, the connection between Envoy
+                            and the backend or Envoy and the external client will
+                            be closed. If not specified, there is no per-route idle
+                            timeout, though a connection manager-wide stream_idle_timeout
                             default of 5m still applies.
                           pattern: ^(((\d*(\.\d*)?h)|(\d*(\.\d*)?m)|(\d*(\.\d*)?s)|(\d*(\.\d*)?ms)|(\d*(\.\d*)?us)|(\d*(\.\d*)?µs)|(\d*(\.\d*)?ns))+|infinity|infinite)$
                           type: string
@@ -3983,64 +2085,6 @@ spec:
                       description: Service defines an Kubernetes Service to proxy
                         traffic.
                       properties:
-                        cookieRewritePolicies:
-                          description: The policies for rewriting Set-Cookie header
-                            attributes.
-                          items:
-                            properties:
-                              domainRewrite:
-                                description: DomainRewrite enables rewriting the Set-Cookie
-                                  Domain element. If not set, Domain will not be rewritten.
-                                properties:
-                                  value:
-                                    description: Value is the value to rewrite the
-                                      Domain attribute to. For now this is required.
-                                    maxLength: 4096
-                                    minLength: 1
-                                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                                    type: string
-                                required:
-                                - value
-                                type: object
-                              name:
-                                description: Name is the name of the cookie for which
-                                  attributes will be rewritten.
-                                maxLength: 4096
-                                minLength: 1
-                                pattern: ^[^()<>@,;:\\"\/[\]?={} \t\x7f\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f]+$
-                                type: string
-                              pathRewrite:
-                                description: PathRewrite enables rewriting the Set-Cookie
-                                  Path element. If not set, Path will not be rewritten.
-                                properties:
-                                  value:
-                                    description: Value is the value to rewrite the
-                                      Path attribute to. For now this is required.
-                                    maxLength: 4096
-                                    minLength: 1
-                                    pattern: ^[^;\x7f\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f]+$
-                                    type: string
-                                required:
-                                - value
-                                type: object
-                              sameSite:
-                                description: SameSite enables rewriting the Set-Cookie
-                                  SameSite element. If not set, SameSite attribute
-                                  will not be rewritten.
-                                enum:
-                                - Strict
-                                - Lax
-                                - None
-                                type: string
-                              secure:
-                                description: Secure enables rewriting the Set-Cookie
-                                  Secure element. If not set, Secure attribute will
-                                  not be rewritten.
-                                type: boolean
-                            required:
-                            - name
-                            type: object
-                          type: array
                         mirror:
                           description: If Mirror is true the Service will receive
                             a read only mirror of the traffic for this route.
@@ -4140,9 +2184,8 @@ spec:
                             backend service's certificate
                           properties:
                             caSecret:
-                              description: Name or namespaced name of the Kubernetes
-                                secret used to validate the certificate presented
-                                by the backend
+                              description: Name of the Kubernetes secret be used to
+                                validate the certificate presented by the backend
                               type: string
                             subjectName:
                               description: Key which is expected to be present in
@@ -4292,7 +2335,6 @@ spec:
                     description: The fully qualified domain name of the root of the
                       ingress tree all leaves of the DAG rooted at this object relate
                       to the fqdn.
-                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
                     type: string
                   rateLimitPolicy:
                     description: The policy for rate limiting on the virtual host.
@@ -4877,7 +2919,7 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.6.0
+    controller-gen.kubebuilder.io/version: v0.5.0
   creationTimestamp: null
   name: tlscertificatedelegations.projectcontour.io
 spec:
@@ -5201,7 +3243,7 @@ metadata:
   name: flyte-contour-contour
   labels:
     app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
+    helm.sh/chart: contour-5.0.0
     app.kubernetes.io/instance: flyte
     app.kubernetes.io/managed-by: Helm
 rules:
@@ -5224,14 +3266,6 @@ rules:
   - apiGroups:
       - ""
     resources:
-      - namespaces
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
       - secrets
     verbs:
       - get
@@ -5241,6 +3275,23 @@ rules:
       - ""
     resources:
       - services
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions
+    verbs:
+      - list
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - gatewayclasses
+      - gateways
+      - httproutes
+      - tcproutes
     verbs:
       - get
       - list
@@ -5265,46 +3316,6 @@ rules:
       - networking.k8s.io
     resources:
       - ingresses/status
-    verbs:
-      - create
-      - get
-      - update
-  - apiGroups:
-      - networking.x-k8s.io
-    resources:
-      - gatewayclasses
-      - gateways
-      - httproutes
-      - tcproutes
-      - tlsroutes
-      - udproutes
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - networking.x-k8s.io
-    resources:
-      - gatewayclasses/status
-      - gateways/status
-      - httproutes/status
-      - tcproutes/status
-      - tlsroutes/status
-      - udproutes/status
-    verbs:
-      - update
-  - apiGroups:
-      - projectcontour.io
-    resources:
-      - contourconfigurations
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - projectcontour.io
-    resources:
-      - contourconfigurations/status
     verbs:
       - create
       - get
@@ -5654,7 +3665,7 @@ metadata:
   name: flyte-contour-contour
   labels:
     app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
+    helm.sh/chart: contour-5.0.0
     app.kubernetes.io/instance: flyte
     app.kubernetes.io/managed-by: Helm
 roleRef:
@@ -5834,6 +3845,44 @@ rules:
     resourceNames: ["heapster", "http:heapster:", "https:heapster:", "dashboard-metrics-scraper", "http:dashboard-metrics-scraper"]
     verbs: ["get"]
 ---
+# Source: flyte/charts/sparkoperator/templates/spark-rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spark-role
+  namespace: flyte
+  labels:
+    helm.sh/chart: sparkoperator-1.1.17
+    app.kubernetes.io/name: sparkoperator
+    app.kubernetes.io/instance: flyte
+    app.kubernetes.io/version: "v1beta2-1.3.3-3.1.1"
+    app.kubernetes.io/managed-by: Helm
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - "*"
+- apiGroups:
+  - ""
+  resources:
+  - services
+  verbs:
+  - "*"
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - "*"
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - "*"
+---
 # Source: flyte/charts/kubernetes-dashboard/templates/rolebinding.yaml
 # Copyright 2017 The Kubernetes Authors.
 #
@@ -5868,6 +3917,27 @@ subjects:
     name: flyte-kubernetes-dashboard
     namespace: flyte
 ---
+# Source: flyte/charts/sparkoperator/templates/spark-rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spark
+  namespace: flyte
+  labels:
+    helm.sh/chart: sparkoperator-1.1.17
+    app.kubernetes.io/name: sparkoperator
+    app.kubernetes.io/instance: flyte
+    app.kubernetes.io/version: "v1beta2-1.3.3-3.1.1"
+    app.kubernetes.io/managed-by: Helm
+subjects:
+- kind: ServiceAccount
+  name: flyte-spark
+  namespace: flyte
+roleRef:
+  kind: Role
+  name: spark-role
+  apiGroup: rbac.authorization.k8s.io
+---
 # Source: flyte/charts/contour/templates/contour/service.yaml
 apiVersion: v1
 kind: Service
@@ -5876,7 +3946,7 @@ metadata:
   namespace: flyte
   labels:
     app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
+    helm.sh/chart: contour-5.0.0
     app.kubernetes.io/instance: flyte
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: contour
@@ -5900,7 +3970,7 @@ metadata:
   namespace: flyte
   labels:
     app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
+    helm.sh/chart: contour-5.0.0
     app.kubernetes.io/instance: flyte
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: envoy
@@ -5919,12 +3989,12 @@ spec:
     - name: http
       port: 80
       protocol: TCP
-      targetPort: 80
+      targetPort: http
       nodePort: 30081
     - name: https
       port: 443
       protocol: TCP
-      targetPort: 443
+      targetPort: https
   selector:
     app.kubernetes.io/name: contour
     app.kubernetes.io/instance: flyte
@@ -6134,7 +4204,7 @@ metadata:
   namespace: flyte
   labels:
     app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
+    helm.sh/chart: contour-5.0.0
     app.kubernetes.io/instance: flyte
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: envoy
@@ -6143,7 +4213,6 @@ spec:
     type: RollingUpdate
     rollingUpdate:
       maxUnavailable: 10%
-  minReadySeconds: 0
   selector:
     matchLabels:
       app.kubernetes.io/name: contour
@@ -6153,7 +4222,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: contour
-        helm.sh/chart: contour-6.0.0
+        helm.sh/chart: contour-5.0.0
         app.kubernetes.io/instance: flyte
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: envoy
@@ -6175,7 +4244,7 @@ spec:
           args:
             - envoy
             - shutdown-manager
-          image: docker.io/bitnami/contour:1.19.0-debian-10-r0
+          image: docker.io/bitnami/contour:1.17.0-debian-10-r0
           imagePullPolicy: IfNotPresent
           lifecycle:
             preStop:
@@ -6194,9 +4263,6 @@ spec:
             successThreshold: 1
             failureThreshold: 6
           name: shutdown-manager
-          resources:
-            limits: {}
-            requests: {}
         - command:
             - envoy
           args:
@@ -6205,7 +4271,7 @@ spec:
             - --service-cluster $(CONTOUR_NAMESPACE)
             - --service-node $(ENVOY_POD_NAME)
             - --log-level info
-          image: docker.io/bitnami/envoy:1.19.1-debian-10-r55
+          image: docker.io/bitnami/envoy:1.17.3-debian-10-r47
           imagePullPolicy: IfNotPresent
           name: envoy
           securityContext:
@@ -6263,8 +4329,6 @@ spec:
               mountPath: /config
             - name: envoycert
               mountPath: /certs
-            - name: envoy-admin
-              mountPath: /admin
           lifecycle:
             preStop:
               httpGet:
@@ -6283,7 +4347,7 @@ spec:
             - --envoy-cafile=/certs/ca.crt
             - --envoy-cert-file=/certs/tls.crt
             - --envoy-key-file=/certs/tls.key
-          image: docker.io/bitnami/contour:1.19.0-debian-10-r0
+          image: docker.io/bitnami/contour:1.17.0-debian-10-r0
           imagePullPolicy: IfNotPresent
           name: envoy-initconfig
           resources: 
@@ -6299,8 +4363,6 @@ spec:
             - name: envoycert
               mountPath: /certs
               readOnly: true
-            - name: envoy-admin
-              mountPath: /admin
           env:
             - name: CONTOUR_NAMESPACE
               valueFrom:
@@ -6309,8 +4371,6 @@ spec:
       automountServiceAccountToken: false
       serviceAccountName: flyte-contour-envoy
       volumes:
-        - name: envoy-admin
-          emptyDir: {}
         - name: envoy-config
           emptyDir: {}
         - name: envoycert
@@ -6326,7 +4386,7 @@ metadata:
   namespace: flyte
   labels:
     app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
+    helm.sh/chart: contour-5.0.0
     app.kubernetes.io/instance: flyte
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: contour
@@ -6346,10 +4406,10 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/config: 0574035803f58ce077fc64af3b1d6e47313524ddce5ee56d2e66399799b68ea2
+        checksum/config: 0f188bc9efceaf67fedcc75e30626b11bd4f70e2301534d820cb09a7db9f2140
       labels:
         app.kubernetes.io/name: contour
-        helm.sh/chart: contour-6.0.0
+        helm.sh/chart: contour-5.0.0
         app.kubernetes.io/instance: flyte
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: contour
@@ -6386,8 +4446,7 @@ spec:
             - --contour-cert-file=/certs/tls.crt
             - --contour-key-file=/certs/tls.key
             - --config-path=/config/contour.yaml
-            - --ingress-class-name=contour
-          image: docker.io/bitnami/contour:1.19.0-debian-10-r0
+          image: docker.io/bitnami/contour:1.17.0-debian-10-r0
           imagePullPolicy: IfNotPresent
           name: contour
           ports:
@@ -6576,7 +4635,7 @@ spec:
         resources: 
           limits:
             cpu: 250m
-            ephemeral-storage: 100Mi
+            ephemeral-storage: 500Mi
             memory: 500Mi
           requests:
             cpu: 10m
@@ -6877,7 +4936,7 @@ spec:
   template:
     metadata:
       annotations:
-        configChecksum: "5a2bb5ada5db747f67b3bdfcdc742117d8ff5e163cad25b57963e24d9345198"
+        configChecksum: "31758cded1cfffe56860cca114cb7642a7a69782fb29eace73e1425aaff04da"
       labels: 
         app.kubernetes.io/name: flytepropeller
         app.kubernetes.io/instance: flyte
@@ -6946,7 +5005,7 @@ spec:
         app.kubernetes.io/name: flyte-pod-webhook
         app.kubernetes.io/version: v0.16.14
       annotations:
-        configChecksum: "5a2bb5ada5db747f67b3bdfcdc742117d8ff5e163cad25b57963e24d9345198"
+        configChecksum: "31758cded1cfffe56860cca114cb7642a7a69782fb29eace73e1425aaff04da"
     spec:
       securityContext:
         fsGroup: 65534
@@ -7106,6 +5165,76 @@ spec:
           secretName: flyte-kubernetes-dashboard-certs
       - name: tmp-volume
         emptyDir: {}
+---
+# Source: flyte/charts/sparkoperator/templates/deployment.yaml
+# If the admission webhook is enabled, then a post-install step is required
+# to generate and install the secret in the operator namespace.
+
+# In the post-install hook, the token corresponding to the operator service account
+# is used to authenticate with the Kubernetes API server to install the secret bundle.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flyte-sparkoperator
+  labels:
+    helm.sh/chart: sparkoperator-1.1.17
+    app.kubernetes.io/name: sparkoperator
+    app.kubernetes.io/instance: flyte
+    app.kubernetes.io/version: "v1beta2-1.3.3-3.1.1"
+    app.kubernetes.io/managed-by: Helm
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: sparkoperator
+      app.kubernetes.io/instance: flyte
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "10254"
+        prometheus.io/path: /metrics
+      labels:
+        app.kubernetes.io/name: sparkoperator
+        app.kubernetes.io/instance: flyte
+    spec:
+      serviceAccountName: flyte-sparkoperator
+      securityContext:
+        {}
+      containers:
+      - name: sparkoperator
+        image: gcr.io/spark-operator/spark-operator:v1beta2-1.2.0-3.0.0
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          {}
+        ports:
+          - name: "metrics"
+            containerPort: 10254
+        
+        args:
+        - -v=2
+        - -logtostderr
+        - -namespace=
+        - -ingress-url-format=
+        - -controller-threads=10
+        - -resync-interval=30
+        - -enable-batch-scheduler=false
+        - -enable-metrics=true
+        - -metrics-labels=app_type
+        - -metrics-port=10254
+        - -metrics-endpoint=/metrics
+        - -metrics-prefix=
+        - -enable-resource-quota-enforcement=false
+        resources:
+          limits:
+            cpu: 100m
+            memory: 300Mi
+          requests:
+            cpu: 100m
+            memory: 300Mi
 ---
 # Source: flyte/templates/minio/deployment.yaml
 apiVersion: apps/v1
@@ -7546,22 +5675,6 @@ spec:
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ---
-# Source: flyte/charts/contour/templates/contour/ingressclass.yaml
-apiVersion: networking.k8s.io/v1
-kind: IngressClass
-metadata:
-  name: contour
-  annotations:
-    ingressclass.kubernetes.io/is-default-class: "true"
-  labels:
-    app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
-    app.kubernetes.io/instance: flyte
-    app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/component: contour
-spec:
-  controller: projectcontour.io/flyte/flyte-contour-contour
----
 # Source: flyte/charts/contour/templates/certgen/serviceaccount.yaml
 apiVersion: v1
 kind: ServiceAccount
@@ -7573,10 +5686,140 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
     app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
+    helm.sh/chart: contour-5.0.0
     app.kubernetes.io/instance: flyte
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: contour-certgen
+---
+# Source: flyte/charts/sparkoperator/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: flyte-sparkoperator
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-delete-policy": hook-failed, before-hook-creation
+  labels:
+    helm.sh/chart: sparkoperator-1.1.17
+    app.kubernetes.io/name: sparkoperator
+    app.kubernetes.io/instance: flyte
+    app.kubernetes.io/version: "v1beta2-1.3.3-3.1.1"
+    app.kubernetes.io/managed-by: Helm
+---
+# Source: flyte/charts/sparkoperator/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: flyte-sparkoperator
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-delete-policy": hook-failed, before-hook-creation
+  labels:
+    helm.sh/chart: sparkoperator-1.1.17
+    app.kubernetes.io/name: sparkoperator
+    app.kubernetes.io/instance: flyte
+    app.kubernetes.io/version: "v1beta2-1.3.3-3.1.1"
+    app.kubernetes.io/managed-by: Helm
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - "*"
+- apiGroups:
+  - ""
+  resources:
+  - services
+  - configmaps
+  - secrets
+  verbs:
+  - create
+  - get
+  - delete
+  - update
+- apiGroups:
+  - extensions
+  - networking.k8s.io
+  resources:
+  - ingresses
+  verbs:
+  - create
+  - get
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - update
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - resourcequotas
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apiextensions.k8s.io
+  resources:
+  - customresourcedefinitions
+  verbs:
+  - create
+  - get
+  - update
+  - delete
+- apiGroups:
+  - admissionregistration.k8s.io
+  resources:
+  - mutatingwebhookconfigurations
+  - validatingwebhookconfigurations
+  verbs:
+  - create
+  - get
+  - update
+  - delete
+- apiGroups:
+  - sparkoperator.k8s.io
+  resources:
+  - sparkapplications
+  - sparkapplications/status
+  - scheduledsparkapplications
+  - scheduledsparkapplications/status
+  verbs:
+  - "*"
+---
+# Source: flyte/charts/sparkoperator/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: flyte-sparkoperator
+  annotations:
+    "helm.sh/hook": pre-install
+    "helm.sh/hook-delete-policy": hook-failed, before-hook-creation
+  labels:
+    helm.sh/chart: sparkoperator-1.1.17
+    app.kubernetes.io/name: sparkoperator
+    app.kubernetes.io/instance: flyte
+    app.kubernetes.io/version: "v1beta2-1.3.3-3.1.1"
+    app.kubernetes.io/managed-by: Helm
+subjects:
+  - kind: ServiceAccount
+    name: flyte-sparkoperator
+    namespace: flyte
+roleRef:
+  kind: ClusterRole
+  name: flyte-sparkoperator
+  apiGroup: rbac.authorization.k8s.io
 ---
 # Source: flyte/charts/contour/templates/certgen/rbac.yaml
 apiVersion: rbac.authorization.k8s.io/v1
@@ -7589,7 +5832,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
     app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
+    helm.sh/chart: contour-5.0.0
     app.kubernetes.io/instance: flyte
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: contour-certgen
@@ -7613,7 +5856,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
     app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
+    helm.sh/chart: contour-5.0.0
     app.kubernetes.io/instance: flyte
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: contour-certgen
@@ -7637,7 +5880,7 @@ metadata:
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
     app.kubernetes.io/name: contour
-    helm.sh/chart: contour-6.0.0
+    helm.sh/chart: contour-5.0.0
     app.kubernetes.io/instance: flyte
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: contour-certgen
@@ -7647,7 +5890,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: contour
-        helm.sh/chart: contour-6.0.0
+        helm.sh/chart: contour-5.0.0
         app.kubernetes.io/instance: flyte
         app.kubernetes.io/managed-by: Helm
         app.kubernetes.io/component: contour-certgen
@@ -7655,7 +5898,7 @@ spec:
       
       containers:
         - name: contour
-          image: docker.io/bitnami/contour:1.19.0-debian-10-r0
+          image: docker.io/bitnami/contour:1.17.0-debian-10-r0
           imagePullPolicy: IfNotPresent
           command:
             - contour
